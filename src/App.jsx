@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import './App.css';
 import Dashboard from './components/Dashboard';
 import Onboarding from './components/Onboarding';
+import AuthScreen from './components/AuthScreen';
+import { auth, db, doc, getDoc, setDoc, firebaseConfig } from './firebase';
+import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 
 // ── Premium Logo — IDE Window Style ────────────
 function LogoMark({ size = 44 }) {
@@ -108,34 +111,231 @@ function TopBar() {
 }
 
 function App() {
-  const [userProfile, setUserProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const safeGet = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+  const safeParse = (raw) => { try { return JSON.parse(raw); } catch { return null; } };
+
+  const [userProfile, setUserProfile] = useState(() => {
+    const raw = safeGet('dream_user_profile');
+    return raw ? safeParse(raw) : null;
+  });
+  const [uid, setUid] = useState(() => safeGet('dream_user_uid') || null);
+  const [authStatus, setAuthStatus] = useState(() => safeGet('dream_auth_status') || 'unauth');
+  const [loading, setLoading] = useState(false);
+  const [bootError, setBootError] = useState('');
 
   useEffect(() => {
-    const saved = localStorage.getItem('dream_user_profile');
-    if (saved) setUserProfile(JSON.parse(saved));
-    setLoading(false);
+    let cancelled = false;
+
+    const safeGet = (key) => {
+      try { return localStorage.getItem(key); } catch { return null; }
+    };
+    const safeSet = (key, value) => {
+      try { localStorage.setItem(key, value); } catch { return; }
+    };
+    const safeRemove = (key) => {
+      try { localStorage.removeItem(key); } catch { return; }
+    };
+    const safeParse = (raw) => {
+      try { return JSON.parse(raw); } catch { return null; }
+    };
+    const readJson = (key) => {
+      const raw = safeGet(key);
+      return raw ? safeParse(raw) : null;
+    };
+
+    const hydrateUserDoc = async (userUid) => {
+      if (!db) return;
+
+      const docRef = doc(db, 'users', userUid);
+      let data = null;
+      try {
+        const docSnap = await getDoc(docRef);
+        data = docSnap.exists() ? docSnap.data() : {};
+      } catch (e) {
+        console.error('Cloud load failed', e);
+        data = {};
+      }
+
+      const localProfile = readJson('dream_user_profile');
+      let profile = data?.profile || localProfile || null;
+
+      if (!data?.profile && localProfile) {
+        try { await setDoc(docRef, { profile: localProfile }, { merge: true }); } catch (e) {
+          console.error('Cloud profile hydrate failed:', e);
+        }
+      }
+
+      // Store Cloud → Local (prefer uid-based keys; keep name-based for backward compat)
+      const tasksKeyUid = `dream_tasks_uid_${userUid}`;
+      const historyKeyUid = `dream_history_uid_${userUid}`;
+      const catsKeyUid = `dream_cats_uid_${userUid}`;
+
+      const maybeWriteByName = (kind, value) => {
+        if (!profile?.name) return;
+        const key = kind === 'tasks'
+          ? `dream_tasks_${profile.name}`
+          : kind === 'history'
+            ? `dream_history_${profile.name}`
+            : `dream_cats_${profile.name}`;
+        safeSet(key, JSON.stringify(value));
+      };
+
+      if (data?.tasks) {
+        safeSet(tasksKeyUid, JSON.stringify(data.tasks));
+        maybeWriteByName('tasks', data.tasks);
+      } else {
+        // If Cloud missing tasks but Local has them (guest → login), upload once
+        const localTasks = readJson(tasksKeyUid) || (profile?.name ? readJson(`dream_tasks_${profile.name}`) : null);
+        if (localTasks) {
+          safeSet(tasksKeyUid, JSON.stringify(localTasks));
+          maybeWriteByName('tasks', localTasks);
+          try { await setDoc(docRef, { tasks: localTasks }, { merge: true }); } catch (e) { console.error('Cloud tasks hydrate failed:', e); }
+        }
+      }
+
+      if (data?.history) {
+        safeSet(historyKeyUid, JSON.stringify(data.history));
+        maybeWriteByName('history', data.history);
+      } else {
+        const localHistory = readJson(historyKeyUid) || (profile?.name ? readJson(`dream_history_${profile.name}`) : null);
+        if (localHistory) {
+          safeSet(historyKeyUid, JSON.stringify(localHistory));
+          maybeWriteByName('history', localHistory);
+          try { await setDoc(docRef, { history: localHistory }, { merge: true }); } catch (e) { console.error('Cloud history hydrate failed:', e); }
+        }
+      }
+
+      if (data?.categories) {
+        safeSet(catsKeyUid, JSON.stringify(data.categories));
+        maybeWriteByName('cats', data.categories);
+      } else {
+        const localCats = readJson(catsKeyUid) || (profile?.name ? readJson(`dream_cats_${profile.name}`) : null);
+        if (localCats) {
+          safeSet(catsKeyUid, JSON.stringify(localCats));
+          maybeWriteByName('cats', localCats);
+          try { await setDoc(docRef, { categories: localCats }, { merge: true }); } catch (e) { console.error('Cloud categories hydrate failed:', e); }
+        }
+      }
+
+      if (profile) {
+        safeSet('dream_user_profile', JSON.stringify(profile));
+        if (!cancelled) setUserProfile(profile);
+      } else {
+        if (!cancelled) setUserProfile(null);
+      }
+    };
+
+    setBootError('');
+
+    // Force Google login: app works only when Firebase keys are configured.
+    if (!firebaseConfig?.apiKey || !auth) {
+      setAuthStatus('unauth');
+      setLoading(false);
+      setUid(null);
+      setUserProfile(null);
+      setBootError('Firebase is not configured. Add your keys in `.env` (VITE_FIREBASE_...) to enable Google login.');
+      return () => { cancelled = true; };
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (cancelled) return;
+
+      if (!user) {
+        safeRemove('dream_user_uid');
+        safeSet('dream_auth_status', 'unauth');
+        setUid(null);
+        setAuthStatus('unauth');
+        setLoading(false);
+        return;
+      }
+
+      // If there is no local profile cache, we MUST show the loading screen
+      // so the user doesn't see the Onboarding page while we fetch their existing data from the cloud.
+      if (!readJson('dream_user_profile')) {
+        setLoading(true);
+      }
+
+      const userUid = user.uid;
+      safeSet('dream_user_uid', userUid);
+      safeSet('dream_auth_status', 'auth');
+      setUid(userUid);
+      setAuthStatus('auth');
+
+      try {
+        await hydrateUserDoc(userUid);
+      } catch (e) {
+        console.error('Hydration failed:', e);
+        if (!cancelled) setBootError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }, (err) => {
+      console.error('Auth state listener failed:', err);
+      if (!cancelled) {
+        safeSet('dream_auth_status', 'unauth');
+        setAuthStatus('unauth');
+        setUid(null);
+        setBootError(err instanceof Error ? err.message : String(err));
+        setLoading(false);
+      }
+    });
+
+    return () => { cancelled = true; unsubscribe(); };
   }, []);
 
-  const handleSaveProfile = (profile) => {
-    localStorage.setItem('dream_user_profile', JSON.stringify(profile));
+  const handleSaveProfile = async (profile) => {
+    try { localStorage.setItem('dream_user_profile', JSON.stringify(profile)); } catch (e) { console.warn('Local profile save failed:', e); }
     setUserProfile(profile);
+    if (uid && db) {
+      try { await setDoc(doc(db, 'users', uid), { profile }, { merge: true }); } catch (e) { console.error('Cloud profile save failed:', e); }
+    }
   };
 
-  const handleReset = () => {
-    localStorage.removeItem('dream_user_profile');
-    setUserProfile(null);
+  const handleLogout = async () => {
+    try {
+      await firebaseSignOut(auth);
+      localStorage.removeItem('dream_user_profile');
+      localStorage.removeItem('dream_user_uid');
+      localStorage.setItem('dream_auth_status', 'unauth');
+      setUserProfile(null);
+      setUid(null);
+      setAuthStatus('unauth');
+    } catch (e) { console.error('Logout failed:', e); }
   };
 
-  if (loading) return null;
+  // Show loading screen only if we have NO profile, AND we are either still checking auth
+  // OR we are authenticated and actively fetching from the cloud.
+  if (!userProfile && (authStatus === 'pending' || (authStatus === 'auth' && loading))) {
+    return (
+      <div className="app-container">
+        <TopBar />
+        <div className="glass-panel" style={{ maxWidth: 560, margin: '0 auto', padding: '2rem' }}>
+          <h2 style={{ fontSize: '1.15rem', marginBottom: '0.4rem', color: 'var(--accent-blue)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="spin-pulse" style={{ display: 'inline-block' }}>⚡</span> Syncing with Cloud...
+          </h2>
+          <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.9rem' }}>
+            Fetching your securely saved profile.
+          </p>
+          {bootError ? (
+            <div style={{ marginTop: '1rem', color: 'var(--accent-red)', fontSize: '0.85rem' }}>
+              {bootError}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">
       <TopBar />
-      {userProfile
-        ? <Dashboard userProfile={userProfile} onReset={handleReset} />
-        : <Onboarding onComplete={handleSaveProfile} />
-      }
+      {!userProfile && authStatus === 'unauth' ? (
+        <AuthScreen />
+      ) : userProfile ? (
+        <Dashboard userProfile={userProfile} uid={uid} onLogout={handleLogout} onUpdateProfile={handleSaveProfile} />
+      ) : (
+        <Onboarding onComplete={handleSaveProfile} />
+      )}
     </div>
   );
 }

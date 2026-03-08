@@ -8,5 +8,9 @@ export default defineConfig({
     host: '0.0.0.0',   // expose on all network interfaces
     port: 5173,
     strictPort: true,
+    headers: {
+      "Cross-Origin-Opener-Policy": "unsafe-none",
+      "Cross-Origin-Embedder-Policy": "unsafe-none"
+    }
   }
 })
