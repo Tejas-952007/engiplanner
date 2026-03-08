@@ -119,8 +119,8 @@ function App() {
     return raw ? safeParse(raw) : null;
   });
   const [uid, setUid] = useState(() => safeGet('dream_user_uid') || null);
-  const [authStatus, setAuthStatus] = useState(() => safeGet('dream_auth_status') || 'unauth');
-  const [loading, setLoading] = useState(false);
+  const [authStatus, setAuthStatus] = useState(() => safeGet('dream_auth_status') || 'pending');
+  const [loading, setLoading] = useState(true);
   const [bootError, setBootError] = useState('');
 
   useEffect(() => {
@@ -249,11 +249,9 @@ function App() {
         return;
       }
 
-      // If there is no local profile cache, we MUST show the loading screen
-      // so the user doesn't see the Onboarding page while we fetch their existing data from the cloud.
-      if (!readJson('dream_user_profile')) {
-        setLoading(true);
-      }
+      // Always show loading while syncing with cloud to prevent outdated local cache
+      // from instantly overwriting the newest cloud data when Dashboard renders.
+      setLoading(true);
 
       const userUid = user.uid;
       safeSet('dream_user_uid', userUid);
@@ -303,9 +301,8 @@ function App() {
     } catch (e) { console.error('Logout failed:', e); }
   };
 
-  // Show loading screen only if we have NO profile, AND we are either still checking auth
-  // OR we are authenticated and actively fetching from the cloud.
-  if (!userProfile && (authStatus === 'pending' || (authStatus === 'auth' && loading))) {
+  // Always show loading screen when computing auth or actively syncing with cloud
+  if (authStatus === 'pending' || (authStatus === 'auth' && loading)) {
     return (
       <div className="app-container">
         <TopBar />

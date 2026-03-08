@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
-import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
 
 const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
@@ -27,4 +27,4 @@ try {
     console.error("Firebase init failed:", error);
 }
 
-export { auth, db, provider, signInWithPopup, signOut, doc, setDoc, getDoc, firebaseConfig };
+export { auth, db, provider, signInWithPopup, signOut, doc, setDoc, getDoc, onSnapshot, firebaseConfig };

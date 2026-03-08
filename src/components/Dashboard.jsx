@@ -11,7 +11,7 @@ import {
     Dumbbell, Map, LogOut, History, Settings, Trash2, X,
     Bell, BellOff, Edit2, Play, Square, Clock, Save, User, Sliders, Mail
 } from 'lucide-react';
-import { db, doc, setDoc } from '../firebase';
+import { db, doc, setDoc, onSnapshot } from '../firebase';
 
 const CATEGORIES = {
     'Academics': { icon: BookOpen, color: '#60a5fa', hex: '#60a5fa', glow: 'rgba(96,165,250,0.35)' },
@@ -385,6 +385,25 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
         }
         if (uid && db) setDoc(doc(db, 'users', uid), { categories: customCategories }, { merge: true }).catch(console.error);
     }, [customCategories, uid]);
+
+    // ── Real-time Cross-Device Sync ────────────────────────────────────────────
+    useEffect(() => {
+        if (!uid || !db) return;
+        const unsub = onSnapshot(doc(db, 'users', uid), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                // If it has pending writes, it means *we* just triggered this update locally
+                // Ignoring it prevents an endless write loop and UI flickering.
+                if (docSnap.metadata.hasPendingWrites) return;
+
+                if (data.tasks) setTasks(data.tasks);
+                if (data.history) setHistory(data.history);
+                if (data.categories) setCustomCategories(data.categories);
+            }
+        });
+        return () => unsub();
+    }, [uid]);
+
 
     // Merge built-in + custom categories into one object
     const allCategories = useMemo(() => {
