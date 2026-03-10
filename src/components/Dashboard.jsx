@@ -297,42 +297,6 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
 
     const BACKEND = 'https://engiplanner-backend.onrender.com';
 
-    const sendReminderNow = async () => {
-        if (sendingReminder) return;
-        setSendingReminder(true);
-        try {
-            const currentUser = auth?.currentUser;
-            if (!currentUser) {
-                showToast('Not logged in', 'Please sign in with Google to use this feature.', 'warn', 4000);
-                return;
-            }
-            const idToken = await currentUser.getIdToken();
-            const res = await fetch(`${BACKEND}/send-my-reminder`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ idToken })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                showToast('📧 Reminder Sent!', `Check your inbox at ${userProfile?.email} — your task briefing is on its way!`, 'success', 6000);
-            } else {
-                showToast('Send Failed', data.error || 'Could not send email. Try again.', 'warn', 4000);
-            }
-        } catch (e) {
-            showToast('Error', 'Network error. Is the server awake?', 'warn', 4000);
-        } finally {
-            setSendingReminder(false);
-        }
-    };
-
-    const copyReferralLink = () => {
-        navigator.clipboard.writeText('https://engiplanner.vercel.app').then(() => {
-            setCopiedLink(true);
-            showToast('Link Copied! 🔗', 'Share https://engiplanner.vercel.app with your friends!', 'success', 3000);
-            setTimeout(() => setCopiedLink(false), 2500);
-        });
-    };
-
     // Timer Effect
     useEffect(() => {
         let interval = null;
@@ -569,6 +533,47 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
     const dismissToast = useCallback((id) => {
         setToasts(prev => prev.filter(t => t.id !== id));
     }, []);
+
+    // ── Send Reminder Now (calls backend with Firebase ID token) ──────────────
+    const sendReminderNow = async () => {
+        if (sendingReminder) return;
+        setSendingReminder(true);
+        try {
+            const currentUser = auth?.currentUser;
+            if (!currentUser) {
+                // Fallback: if auth not available, show helpful message
+                showToast('⚠️ Sign-in Required', 'Please refresh the page and sign in again, then try.', 'warn', 5000);
+                return;
+            }
+            const idToken = await currentUser.getIdToken(/* forceRefresh */ true);
+            const res = await fetch(`${BACKEND}/send-my-reminder`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idToken })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast('📧 Reminder Sent!', `Check your inbox at ${userProfile?.email} — your task briefing is on its way! 🚀`, 'success', 7000);
+            } else {
+                showToast('Send Failed', data.error || 'Could not send email. Try again.', 'warn', 4000);
+            }
+        } catch (e) {
+            console.error('sendReminderNow error:', e);
+            showToast('Network Error', 'Could not reach server. Try again in a moment.', 'warn', 4000);
+        } finally {
+            setSendingReminder(false);
+        }
+    };
+
+    const copyReferralLink = () => {
+        navigator.clipboard.writeText('https://engiplanner.vercel.app').then(() => {
+            setCopiedLink(true);
+            showToast('Link Copied! 🔗', 'Share https://engiplanner.vercel.app with your friends!', 'success', 3000);
+            setTimeout(() => setCopiedLink(false), 2500);
+        }).catch(() => {
+            showToast('Copy Failed', 'Please copy the link manually.', 'warn', 3000);
+        });
+    };
 
     const checkAndNotify = useCallback(() => {
         if (!remindersEnabled) return;
