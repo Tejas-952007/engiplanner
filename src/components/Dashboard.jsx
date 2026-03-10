@@ -959,7 +959,7 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                                                             <option value="Medium">⚡ Medium</option>
                                                             <option value="Low">🌱 Low</option>
                                                         </select>
-                                                        <select className="input-field" value={editingTask.category} onChange={e => setEditingTask({ ...editingTask, category: e.target.value })} style={{ padding: '0.4rem', flex: 1, minWidth: '120px' }}>
+                                                        <select className="input-field" value={editingTask.category} onChange={e => setEditingTask({ ...editingTask, category: e.target.value, subject: '' })} style={{ padding: '0.4rem', flex: 1, minWidth: '120px' }}>
                                                             {categories.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
                                                         </select>
                                                         {(editingTask.category === 'Academics' || editingTask.category === 'Exams') && fallbackSubs.length > 0 && (
@@ -1250,7 +1250,7 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                                     {Object.keys(allCategories).map(cat => (
                                         <div key={cat} className={`cat-pill ${newTask.category === cat ? 'active' : ''}`}
                                             style={{ '--cat-color': allCategories[cat].color }}
-                                            onClick={() => setNewTask({ ...newTask, category: cat })}>
+                                            onClick={() => setNewTask({ ...newTask, category: cat, subject: '' })}>
                                             {cat}
                                         </div>
                                     ))}
@@ -1260,6 +1260,7 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                                 <div className="form-group">
                                     <label>Link to Subject</label>
                                     <select value={newTask.subject} onChange={e => setNewTask({ ...newTask, subject: e.target.value })} className="input-field">
+                                        <option value="">No Subject</option>
                                         {fallbackSubs.map((s, i) => <option key={i} value={s}>{s}</option>)}
                                     </select>
                                 </div>
