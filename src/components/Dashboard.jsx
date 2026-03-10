@@ -9,9 +9,10 @@ import {
     Briefcase, CheckCircle2, Circle, Plus, Flame,
     CalendarDays, AlertCircle, Terminal, Coffee, Cpu,
     Dumbbell, Map, LogOut, History, Settings, Trash2, X,
-    Bell, BellOff, Edit2, Play, Square, Clock, Save, User, Sliders, Mail
+    Bell, BellOff, Edit2, Play, Square, Clock, Save, User, Sliders, Mail,
+    Send, Share2, UserPlus, Copy, Check
 } from 'lucide-react';
-import { db, doc, setDoc, onSnapshot } from '../firebase';
+import { db, doc, setDoc, onSnapshot, auth } from '../firebase';
 
 const CATEGORIES = {
     'Academics': { icon: BookOpen, color: '#60a5fa', hex: '#60a5fa', glow: 'rgba(96,165,250,0.35)' },
@@ -291,6 +292,46 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
     const [editingTask, setEditingTask] = useState(null);
     const [activeTimer, setActiveTimer] = useState(null);
     const [timerSeconds, setTimerSeconds] = useState(0);
+    const [sendingReminder, setSendingReminder] = useState(false);
+    const [copiedLink, setCopiedLink] = useState(false);
+
+    const BACKEND = 'https://engiplanner-backend.onrender.com';
+
+    const sendReminderNow = async () => {
+        if (sendingReminder) return;
+        setSendingReminder(true);
+        try {
+            const currentUser = auth?.currentUser;
+            if (!currentUser) {
+                showToast('Not logged in', 'Please sign in with Google to use this feature.', 'warn', 4000);
+                return;
+            }
+            const idToken = await currentUser.getIdToken();
+            const res = await fetch(`${BACKEND}/send-my-reminder`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idToken })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast('📧 Reminder Sent!', `Check your inbox at ${userProfile?.email} — your task briefing is on its way!`, 'success', 6000);
+            } else {
+                showToast('Send Failed', data.error || 'Could not send email. Try again.', 'warn', 4000);
+            }
+        } catch (e) {
+            showToast('Error', 'Network error. Is the server awake?', 'warn', 4000);
+        } finally {
+            setSendingReminder(false);
+        }
+    };
+
+    const copyReferralLink = () => {
+        navigator.clipboard.writeText('https://engiplanner.vercel.app').then(() => {
+            setCopiedLink(true);
+            showToast('Link Copied! 🔗', 'Share https://engiplanner.vercel.app with your friends!', 'success', 3000);
+            setTimeout(() => setCopiedLink(false), 2500);
+        });
+    };
 
     // Timer Effect
     useEffect(() => {
@@ -1515,7 +1556,45 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                             );
                         })()}
 
-                        {/* ── Reminder Toggle Card Move ── */}
+                        {/* ── Send Reminder Now ── */}
+                        <div style={{
+                            marginBottom: '1rem',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            flexWrap: 'wrap', gap: '0.8rem',
+                            border: '1px solid rgba(52,211,153,0.2)',
+                            background: 'rgba(52,211,153,0.03)',
+                            padding: '1rem', borderRadius: '12px'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <div style={{
+                                    width: '34px', height: '34px', borderRadius: '9px', flexShrink: 0,
+                                    background: 'rgba(52,211,153,0.1)',
+                                    border: '1px solid rgba(52,211,153,0.3)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                    <Send size={17} color="#34d399" />
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#34d399' }}>Send Reminder Now</div>
+                                    <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                                        Instantly email today's task briefing to <b style={{ color: 'rgba(255,255,255,0.5)' }}>{userProfile?.email || 'your email'}</b>
+                                    </div>
+                                </div>
+                            </div>
+                            <button
+                                onClick={sendReminderNow}
+                                disabled={sendingReminder}
+                                className="btn btn-primary"
+                                style={{
+                                    fontSize: '0.78rem', gap: '0.4rem',
+                                    background: sendingReminder ? 'rgba(52,211,153,0.05)' : 'rgba(52,211,153,0.15)',
+                                    borderColor: 'rgba(52,211,153,0.4)', color: '#34d399',
+                                    opacity: sendingReminder ? 0.7 : 1,
+                                    cursor: sendingReminder ? 'not-allowed' : 'pointer'
+                                }}>
+                                {sendingReminder ? '⏳ Sending...' : <><Send size={13} /> Send Now</>}
+                            </button>
+                        </div>
                         <div style={{
                             marginBottom: '1.5rem',
                             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1567,6 +1646,121 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                             <button onClick={handleLogoutClick} className="btn" style={{ background: 'rgba(248,113,113,0.1)', color: 'var(--accent-red)', border: '1px solid rgba(248,113,113,0.3)', padding: '0.6rem 1rem' }}>
                                 <LogOut size={16} /> Logout from Device
                             </button>
+                        </div>
+                    </div>
+
+                    {/* ═══════════════════════════════════════════════════════
+                        REFER TO FRIENDS — Premium invite card
+                    ═══════════════════════════════════════════════════════ */}
+                    <div className="glass-panel animate-fade-in" style={{
+                        background: 'linear-gradient(135deg, rgba(110,86,207,0.08) 0%, rgba(88,166,255,0.06) 50%, rgba(192,132,252,0.08) 100%)',
+                        border: '1px solid rgba(110,86,207,0.3)',
+                        position: 'relative', overflow: 'hidden'
+                    }}>
+                        {/* Background glow blobs */}
+                        <div style={{ position: 'absolute', top: '-60px', right: '-60px', width: '200px', height: '200px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(110,86,207,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                        <div style={{ position: 'absolute', bottom: '-40px', left: '-40px', width: '150px', height: '150px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(88,166,255,0.1) 0%, transparent 70%)', pointerEvents: 'none' }} />
+
+                        {/* Header */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                            <div style={{
+                                width: '42px', height: '42px', borderRadius: '12px', flexShrink: 0,
+                                background: 'linear-gradient(135deg, #6e56cf, #58a6ff)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                boxShadow: '0 0 20px rgba(110,86,207,0.4)'
+                            }}>
+                                <UserPlus size={20} color="#fff" />
+                            </div>
+                            <div>
+                                <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff', margin: 0 }}>Refer to Friends</h3>
+                                <p style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', margin: 0, marginTop: '2px' }}>Help your friends stay on top of their engineering goals 🚀</p>
+                            </div>
+                            <span style={{
+                                marginLeft: 'auto', fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.1em',
+                                background: 'linear-gradient(135deg, #6e56cf, #58a6ff)',
+                                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                                fontFamily: "'JetBrains Mono', monospace"
+                            }}>FREE · ALWAYS</span>
+                        </div>
+
+                        {/* Description */}
+                        <p style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)', lineHeight: 1.7, marginBottom: '1.25rem' }}>
+                            EngiPlanner helps engineering students <strong style={{ color: '#fff' }}>track tasks, build streaks, crush exams</strong>, and stay laser-focused on their roadmap.
+                            Share it with your college friends — it's <strong style={{ color: '#c084fc' }}>100% free</strong> and works on any device.
+                        </p>
+
+                        {/* Shareable link box */}
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '0.5rem',
+                            background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(110,86,207,0.3)',
+                            borderRadius: '10px', padding: '0.65rem 1rem', marginBottom: '1rem'
+                        }}>
+                            <span style={{ flex: 1, fontSize: '0.82rem', color: 'rgba(255,255,255,0.7)', fontFamily: "'JetBrains Mono', monospace", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                https://engiplanner.vercel.app
+                            </span>
+                            <button onClick={copyReferralLink} className="btn btn-outline" style={{ padding: '0.35rem 0.75rem', fontSize: '0.75rem', gap: '0.35rem', borderColor: copiedLink ? 'rgba(52,211,153,0.5)' : 'rgba(110,86,207,0.4)', color: copiedLink ? '#34d399' : '#c084fc', flexShrink: 0, transition: 'all 0.3s ease' }}>
+                                {copiedLink ? <><Check size={13} /> Copied!</> : <><Copy size={13} /> Copy Link</>}
+                            </button>
+                        </div>
+
+                        {/* Share buttons row */}
+                        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                            {/* WhatsApp */}
+                            <a
+                                href={`https://wa.me/?text=${encodeURIComponent('Hey! Try EngiPlanner 🎓 — the ultimate task planner for engineering students. Track assignments, build streaks, get deadline reminders and more. It\'s FREE!\n\n🔗 https://engiplanner.vercel.app')}`}
+                                target="_blank" rel="noopener noreferrer"
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+                                    padding: '0.6rem 1.1rem', borderRadius: '9px',
+                                    background: 'rgba(37,211,102,0.12)', border: '1px solid rgba(37,211,102,0.3)',
+                                    color: '#25d366', fontSize: '0.82rem', fontWeight: 600, textDecoration: 'none',
+                                    transition: 'all 0.2s ease', flex: 1, justifyContent: 'center', minWidth: '130px'
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(37,211,102,0.2)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(37,211,102,0.12)'}>
+                                <span style={{ fontSize: '1rem' }}>📱</span> WhatsApp
+                            </a>
+
+                            {/* Email invite */}
+                            <a
+                                href={`mailto:?subject=You should try EngiPlanner 🎓&body=Hey!%0A%0ATry EngiPlanner — the ultimate task planner for engineering students.%0A%0AFeatures:%0A✅ Smart task planner with deadlines%0A🔥 Streak tracking%0A📧 Daily email reminders%0A📊 Analytics & insights%0A%0AIt's FREE → https://engiplanner.vercel.app%0A%0ASent with ❤️ by ${userProfile?.name || 'a friend'}`}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+                                    padding: '0.6rem 1.1rem', borderRadius: '9px',
+                                    background: 'rgba(88,166,255,0.12)', border: '1px solid rgba(88,166,255,0.3)',
+                                    color: '#58a6ff', fontSize: '0.82rem', fontWeight: 600, textDecoration: 'none',
+                                    transition: 'all 0.2s ease', flex: 1, justifyContent: 'center', minWidth: '130px'
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(88,166,255,0.2)'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(88,166,255,0.12)'}>
+                                <Mail size={15} /> Email Invite
+                            </a>
+
+                            {/* Share button for mobile native share */}
+                            {typeof navigator !== 'undefined' && navigator.share && (
+                                <button
+                                    onClick={() => navigator.share({ title: 'EngiPlanner', text: 'Track your engineering tasks, build streaks & crush exams! 🎓', url: 'https://engiplanner.vercel.app' })}
+                                    style={{
+                                        display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+                                        padding: '0.6rem 1.1rem', borderRadius: '9px', cursor: 'pointer',
+                                        background: 'rgba(192,132,252,0.12)', border: '1px solid rgba(192,132,252,0.3)',
+                                        color: '#c084fc', fontSize: '0.82rem', fontWeight: 600,
+                                        flex: 1, justifyContent: 'center', minWidth: '130px'
+                                    }}>
+                                    <Share2 size={15} /> Share
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Feature highlights */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1.2rem' }}>
+                            {['🎯 Smart Task Planner', '🔥 Streak Tracker', '📧 Email Reminders', '📊 Analytics', '🔄 Google Sync', '📱 Works on Mobile'].map(f => (
+                                <span key={f} style={{
+                                    fontSize: '0.7rem', padding: '0.25rem 0.65rem', borderRadius: '99px',
+                                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                                    color: 'rgba(255,255,255,0.5)'
+                                }}>{f}</span>
+                            ))}
                         </div>
                     </div>
                 </div>
