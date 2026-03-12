@@ -1516,47 +1516,75 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                         {/* ── Email Reminders Toggle ── */}
                         {(() => {
                             const emailEnabled = userProfile?.emailReminders || false;
+                            const reminderHour = userProfile?.reminderHour || '08'; // Default 8 AM
+
+                            const updateReminderHour = async (h) => {
+                                const updated = { ...userProfile, reminderHour: h };
+                                if (onUpdateProfile) await onUpdateProfile(updated);
+                                showToast('Reminder Time Updated', `We'll send your daily briefing at ${h}:00 IST.`, 'success', 3000);
+                            };
+
                             const toggleEmailReminders = async () => {
-                                const updated = { ...userProfile, emailReminders: !emailEnabled };
+                                const updated = { ...userProfile, emailReminders: !emailEnabled, reminderHour };
                                 if (onUpdateProfile) await onUpdateProfile(updated);
                                 showToast(
                                     emailEnabled ? 'Email Reminders OFF' : '📧 Email Reminders ON',
-                                    emailEnabled ? 'You will no longer receive daily email alerts.' : 'You will receive daily deadline reminders at 12:30 PM on your registered email.',
+                                    emailEnabled ? 'You will no longer receive daily email alerts.' : `You will receive daily briefings at ${reminderHour || '08'}:00 IST.`,
                                     emailEnabled ? 'info' : 'success', 4000
                                 );
                             };
                             return (
                                 <div style={{
                                     marginBottom: '1rem',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                    flexWrap: 'wrap', gap: '0.8rem',
+                                    display: 'flex', flexDirection: 'column', gap: '0.8rem',
                                     border: emailEnabled ? '1px solid rgba(88,166,255,0.3)' : '1px solid rgba(255,255,255,0.07)',
                                     background: emailEnabled ? 'rgba(88,166,255,0.03)' : 'rgba(255,255,255,0.02)',
                                     padding: '1rem', borderRadius: '12px'
                                 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                                        <div style={{
-                                            width: '34px', height: '34px', borderRadius: '9px', flexShrink: 0,
-                                            background: emailEnabled ? 'rgba(88,166,255,0.1)' : 'rgba(255,255,255,0.05)',
-                                            border: `1px solid ${emailEnabled ? 'rgba(88,166,255,0.3)' : 'rgba(255,255,255,0.1)'}`,
-                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        }}>
-                                            <Mail size={17} color={emailEnabled ? 'var(--accent-blue)' : 'rgba(255,255,255,0.3)'} />
-                                        </div>
-                                        <div>
-                                            <div style={{ fontSize: '0.88rem', fontWeight: 600, color: emailEnabled ? 'var(--accent-blue)' : 'rgba(255,255,255,0.8)' }}>
-                                                {emailEnabled ? 'Email Reminders: ON' : 'Email Reminders: OFF'}
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.8rem' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                            <div style={{
+                                                width: '34px', height: '34px', borderRadius: '9px', flexShrink: 0,
+                                                background: emailEnabled ? 'rgba(88,166,255,0.1)' : 'rgba(255,255,255,0.05)',
+                                                border: `1px solid ${emailEnabled ? 'rgba(88,166,255,0.3)' : 'rgba(255,255,255,0.1)'}`,
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            }}>
+                                                <Mail size={17} color={emailEnabled ? 'var(--accent-blue)' : 'rgba(255,255,255,0.3)'} />
                                             </div>
-                                            <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
-                                                Daily deadline alerts sent to <b style={{ color: 'rgba(255,255,255,0.5)' }}>{userProfile?.email || 'your email'}</b> at 12:30 PM.
+                                            <div>
+                                                <div style={{ fontSize: '0.88rem', fontWeight: 600, color: emailEnabled ? 'var(--accent-blue)' : 'rgba(255,255,255,0.8)' }}>
+                                                    {emailEnabled ? 'Email Reminders: ON' : 'Email Reminders: OFF'}
+                                                </div>
+                                                <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', marginTop: '2px' }}>
+                                                    Sent to <b style={{ color: 'rgba(255,255,255,0.5)' }}>{userProfile?.email || 'your email'}</b>
+                                                </div>
                                             </div>
                                         </div>
+                                        <button onClick={toggleEmailReminders}
+                                            className={`btn ${emailEnabled ? 'btn-outline' : 'btn-primary'}`}
+                                            style={{ fontSize: '0.78rem', background: emailEnabled ? undefined : 'rgba(88,166,255,0.15)', borderColor: 'rgba(88,166,255,0.4)', color: 'var(--accent-blue)' }}>
+                                            {emailEnabled ? 'Disable' : '📧 Enable Email Alerts'}
+                                        </button>
                                     </div>
-                                    <button onClick={toggleEmailReminders}
-                                        className={`btn ${emailEnabled ? 'btn-outline' : 'btn-primary'}`}
-                                        style={{ fontSize: '0.78rem', background: emailEnabled ? undefined : 'rgba(88,166,255,0.15)', borderColor: 'rgba(88,166,255,0.4)', color: 'var(--accent-blue)' }}>
-                                        {emailEnabled ? 'Disable' : '📧 Enable Email Alerts'}
-                                    </button>
+
+                                    {emailEnabled && (
+                                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.8rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                            <label style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                <Clock size={14} /> Send my daily briefing at:
+                                            </label>
+                                            <select
+                                                value={reminderHour}
+                                                onChange={(e) => updateReminderHour(e.target.value)}
+                                                className="input-field"
+                                                style={{ width: 'auto', minWidth: '100px', height: '32px', fontSize: '0.8rem', padding: '0 0.5rem' }}
+                                            >
+                                                {Array.from({ length: 24 }).map((_, i) => {
+                                                    const h = i.toString().padStart(2, '0');
+                                                    return <option key={h} value={h}>{h}:00 IST</option>;
+                                                })}
+                                            </select>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })()}
