@@ -293,10 +293,25 @@ function App() {
   }, []);
 
   const handleSaveProfile = async (profile) => {
+    const isFirstTime = !userProfile && profile;
     try { localStorage.setItem('dream_user_profile', JSON.stringify(profile)); } catch (e) { console.warn('Local profile save failed:', e); }
     setUserProfile(profile);
     if (uid && db) {
-      try { await setDoc(doc(db, 'users', uid), { profile }, { merge: true }); } catch (e) { console.error('Cloud profile save failed:', e); }
+      try {
+        await setDoc(doc(db, 'users', uid), { profile }, { merge: true });
+
+        // If this is the initial onboarding save, trigger the welcome email
+        if (isFirstTime) {
+          const idToken = await auth.currentUser?.getIdToken();
+          if (idToken) {
+            fetch('https://engiplanner-backend.onrender.com/send-welcome', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ idToken })
+            }).catch(err => console.error('Welcome email trigger failed:', err));
+          }
+        }
+      } catch (e) { console.error('Cloud profile save failed:', e); }
     }
   };
 
