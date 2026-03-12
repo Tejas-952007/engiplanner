@@ -143,7 +143,7 @@ function App() {
       return raw ? safeParse(raw) : null;
     };
 
-    const hydrateUserDoc = async (userUid) => {
+    const hydrateUserDoc = async (userUid, userEmail) => {
       if (!db) return;
 
       const docRef = doc(db, 'users', userUid);
@@ -158,6 +158,17 @@ function App() {
 
       const localProfile = readJson('dream_user_profile');
       let profile = data?.profile || localProfile || null;
+
+      // Ensure user's email is always synced into the profile for backend reminders
+      if (profile && userEmail && profile.email !== userEmail) {
+        profile = { ...profile, email: userEmail };
+        try {
+          await setDoc(docRef, { profile }, { merge: true });
+          safeSet('dream_user_profile', JSON.stringify(profile));
+        } catch (e) {
+          console.error('Cloud email sync failed:', e);
+        }
+      }
 
       if (!data?.profile && localProfile) {
         try { await setDoc(docRef, { profile: localProfile }, { merge: true }); } catch (e) {
@@ -260,7 +271,7 @@ function App() {
       setAuthStatus('auth');
 
       try {
-        await hydrateUserDoc(userUid);
+        await hydrateUserDoc(userUid, user.email);
       } catch (e) {
         console.error('Hydration failed:', e);
         if (!cancelled) setBootError(e instanceof Error ? e.message : String(e));
