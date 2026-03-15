@@ -1,18 +1,16 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
-    Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-    ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Label,
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList
-} from 'recharts';
-import {
     BookOpen, FolderDot, GraduationCap, Code2,
     Briefcase, CheckCircle2, Circle, Plus, Flame,
     CalendarDays, AlertCircle, Terminal, Coffee, Cpu,
     Dumbbell, Map, LogOut, History, Settings, Trash2, X,
     Bell, BellOff, Edit2, Play, Square, Clock, Save, User, Sliders, Mail,
-    Send, Share2, UserPlus, Copy, Check
+    Send, Share2, UserPlus, Copy, Check, BarChart2
 } from 'lucide-react';
 import { db, doc, setDoc, onSnapshot, auth } from '../firebase';
+import StatsPanel from './StatsPanel';
+import FitnessPanel from './FitnessPanel';
+import RoadmapPanel from './RoadmapPanel';
 
 const CATEGORIES = {
     'Academics': { icon: BookOpen, color: '#60a5fa', hex: '#60a5fa', glow: 'rgba(96,165,250,0.35)' },
@@ -36,7 +34,6 @@ const CAT_ACCENT = {
 
 const PRIORITIES = { High: 'priority-high', Medium: 'priority-medium', Low: 'priority-low' };
 const DAILY_CHAL = ["Solve 1 Easy LeetCode 🧠", "Apply to 1 Job 💼", "Read 1 Tech Article 📰", "Review Resume 5 min 📝", "Drink 2L water 💧", "Learn 1 CLI trick 💻", "Refactor a messy function 🛠️"];
-const getLevel = s => s < 20 ? "Freshman" : s < 40 ? "Intern" : s < 60 ? "Junior Dev" : s < 80 ? "Mid Engineer" : "Senior Engineer 🔥";
 
 const COLOR_OPTIONS = [
     '#58a6ff', '#bc8cff', '#3fb950', '#ff7b72', '#f6ad55', '#a0aec0',
@@ -93,199 +90,7 @@ function calcStreak(history) {
     return streak;
 }
 
-function DonutLabel({ viewBox, total }) {
-    const cx = viewBox?.cx || 0;
-    const cy = viewBox?.cy || 0;
-    return (
-        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central">
-            <tspan x={cx} y={cy - 8 || 0} style={{ fill: '#fff', fontSize: '1.5rem', fontWeight: 900, fontFamily: 'JetBrains Mono, monospace' }}>{total}</tspan>
-            <tspan x={cx} y={cy + 14 || 0} style={{ fill: 'rgba(255,255,255,0.38)', fontSize: '0.56rem', letterSpacing: '0.12em', fontFamily: 'JetBrains Mono, monospace' }}>PENDING</tspan>
-        </text>
-    );
-}
-
-// ── Custom bar tooltip ─────────────────────────────────────────────────────────
-function BarTooltipContent({ active, payload, label }) {
-    if (!active || !payload?.length) return null;
-    const d = payload[0]?.payload;
-    return (
-        <div style={{ background: '#1a1a1a', border: `1px solid ${d?.color || '#333'}`, borderRadius: 12, padding: '0.7rem 1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.7)' }}>
-            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: d?.color || '#fff', marginBottom: 4, fontFamily: 'JetBrains Mono, monospace' }}>{label}</div>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-                <span style={{ fontSize: '0.75rem', color: '#34d399' }}>✅ Done: <b>{d?.done}</b></span>
-                <span style={{ fontSize: '0.75rem', color: '#f87171' }}>⏳ Left: <b>{d?.pending}</b></span>
-            </div>
-        </div>
-    );
-}
-
-// ── Analytics Panel ────────────────────────────────────────────────────────────
-const AnalyticsPanel = React.memo(function AnalyticsPanel({ tasks, allCategories, radarData, pieData }) {
-    // Category-wise summary
-    const catStats = useMemo(() => {
-        return Object.entries(allCategories).map(([cat, cfg]) => {
-            const sub = tasks.filter(t => t.category === cat);
-            const done = sub.filter(t => t.completed).length;
-            const pend = sub.length - done;
-            const pct = sub.length ? Math.round((done / sub.length) * 100) : 0;
-            return {
-                category: cat,
-                label: cat.split(' /')[0],
-                done,
-                pending: pend,
-                total: sub.length,
-                pct,
-                color: cfg.hex || cfg.color,
-                glow: cfg.glow || 'rgba(255,255,255,0.1)',
-                icon: cfg.icon,
-            };
-        }).filter(c => c.total > 0);
-    }, [tasks, allCategories]);
-
-    const totalPending = pieData.reduce((s, d) => s + d.value, 0);
-
-    return (
-        <div className="glass-panel analytics-panel-root">
-            {/* ── Header ── */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '1.6rem', flexWrap: 'wrap' }}>
-                <Flame size={20} color="#c084fc" style={{ filter: 'drop-shadow(0 0 6px #c084fc88)' }} />
-                <h2 style={{ fontSize: '1.05rem', background: 'linear-gradient(90deg,#60a5fa,#c084fc,#f87171)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                    Analytics &amp; Insights
-                </h2>
-                <span style={{ marginLeft: 'auto', fontSize: '0.68rem', fontFamily: 'JetBrains Mono, monospace', color: 'rgba(255,255,255,0.25)', letterSpacing: '0.08em' }}>
-                    Category Breakdown
-                </span>
-            </div>
-
-            {/* ── Row 1: Bar chart + Donut ── */}
-            <div className="analytics-charts-row">
-                {/* Bar Chart */}
-                <div className="analytics-chart-wrap">
-                    <p className="analytics-chart-label">📊 Tasks by Category</p>
-                    <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={catStats} margin={{ top: 10, right: 8, left: -22, bottom: 12 }} barSize={18} barCategoryGap="30%">
-                            <defs>
-                                {catStats.map((c, i) => (
-                                    <linearGradient key={i} id={`bar-grad-${i}`} x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="0%" stopColor={c.color} stopOpacity={1} />
-                                        <stop offset="100%" stopColor={c.color} stopOpacity={0.45} />
-                                    </linearGradient>
-                                ))}
-                            </defs>
-                            <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.05)" />
-                            <XAxis
-                                dataKey="label"
-                                tick={{ fill: 'rgba(255,255,255,0.45)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}
-                                axisLine={false} tickLine={false} interval={0}
-                            />
-                            <YAxis
-                                tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }}
-                                axisLine={false} tickLine={false} allowDecimals={false}
-                            />
-                            <Tooltip content={<BarTooltipContent />} cursor={{ fill: 'rgba(255,255,255,0.03)', radius: 6 }} />
-                            <Bar dataKey="done" name="Completed" radius={[6, 6, 0, 0]} stackId="a">
-                                {catStats.map((c, i) => <Cell key={i} fill={`url(#bar-grad-${i})`} />)}
-                                <LabelList dataKey="done" position="top" style={{ fill: 'rgba(255,255,255,0.6)', fontSize: 9, fontFamily: 'JetBrains Mono, monospace' }} />
-                            </Bar>
-                            <Bar dataKey="pending" name="Pending" radius={[6, 6, 0, 0]} stackId="b">
-                                {catStats.map((c, i) => <Cell key={i} fill={c.color} fillOpacity={0.18} />)}
-                            </Bar>
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-
-                {/* Donut + Custom Legend */}
-                <div className="analytics-chart-wrap">
-                    <p className="analytics-chart-label">🍩 Pending Backlog</p>
-                    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                        <ResponsiveContainer width="100%" height={200}>
-                            <PieChart>
-                                <defs>
-                                    {pieData.map((d, i) => (
-                                        <radialGradient key={i} id={`pie-grad-${i}`} cx="50%" cy="50%" r="50%">
-                                            <stop offset="0%" stopColor={d.color} stopOpacity={1} />
-                                            <stop offset="100%" stopColor={d.color} stopOpacity={0.7} />
-                                        </radialGradient>
-                                    ))}
-                                </defs>
-                                <Pie
-                                    data={pieData} cx="50%" cy="50%"
-                                    innerRadius={62} outerRadius={85}
-                                    paddingAngle={3} dataKey="value" nameKey="name"
-                                    stroke="none"
-                                >
-                                    {pieData.map((d, i) => (
-                                        <Cell key={i} fill={`url(#pie-grad-${i})`}
-                                            style={{ filter: `drop-shadow(0 0 4px ${d.color}88)`, cursor: 'pointer' }}
-                                        />
-                                    ))}
-                                    {totalPending > 0 && (
-                                        <Label
-                                            content={(props) => <DonutLabel {...props} total={totalPending} />}
-                                            position="center"
-                                        />
-                                    )}
-                                </Pie>
-                                <Tooltip
-                                    contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 10, fontSize: 12 }}
-                                    formatter={(v, n) => [`${v} tasks`, n]}
-                                />
-                            </PieChart>
-                        </ResponsiveContainer>
-                        {/* Custom color legend */}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem 1rem', justifyContent: 'center', marginTop: '0.5rem' }}>
-                            {pieData.map((d, i) => (
-                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: d.color, boxShadow: `0 0 6px ${d.color}` }} />
-                                    <span style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.5)', fontFamily: 'JetBrains Mono, monospace' }}>{d.name}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* ── Row 2: Category Stat Cards ── */}
-            <div className="analytics-cat-cards">
-                {catStats.map((c, i) => {
-                    const Icon = c.icon;
-                    return (
-                        <div key={i} className="analytics-cat-card"
-                            style={{ '--ac': c.color, '--ac-glow': c.glow, animationDelay: `${i * 60}ms` }}>
-                            {/* Glowing top accent */}
-                            <div style={{ position: 'absolute', top: 0, left: '10%', right: '10%', height: '2px', borderRadius: 999, background: c.color, opacity: 0.7, boxShadow: `0 0 8px ${c.color}` }} />
-                            {/* Icon */}
-                            <div style={{ width: 34, height: 34, borderRadius: 10, background: `color-mix(in srgb, ${c.color}, transparent 82%)`, border: `1px solid color-mix(in srgb, ${c.color}, transparent 55%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                {Icon && <Icon size={17} color={c.color} />}
-                            </div>
-                            {/* Info */}
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
-                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: c.color, fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%' }}>{c.label}</span>
-                                    <span style={{ fontSize: '0.75rem', fontWeight: 900, color: c.pct === 100 ? '#34d399' : c.pct > 50 ? '#fbbf24' : '#f87171', fontFamily: 'JetBrains Mono, monospace' }}>{c.pct}%</span>
-                                </div>
-                                <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: 999, height: 5, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.5) inset' }}>
-                                    <div style={{
-                                        height: '100%', borderRadius: 999,
-                                        width: `${c.pct}%`,
-                                        background: c.pct === 100
-                                            ? 'linear-gradient(90deg,#34d399,#6ee7b7)'
-                                            : `linear-gradient(90deg, ${c.color}, color-mix(in srgb, ${c.color}, #fff 25%))`,
-                                        boxShadow: `0 0 8px ${c.color}88`,
-                                        transition: 'width 1s cubic-bezier(0.34,1.56,0.64,1)',
-                                    }} />
-                                </div>
-                                <p style={{ fontSize: '0.64rem', color: 'rgba(255,255,255,0.3)', marginTop: 3, fontFamily: 'JetBrains Mono, monospace' }}>
-                                    {c.done}/{c.total} done · {c.pending} left
-                                </p>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-});
+// Analytics logic extracted to StatsPanel
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile }) {
@@ -447,7 +252,7 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
     // Views
     const [view, setView] = useState('tasks');
     const [activeCategory, setActiveCategory] = useState('All');
-    const [showAddForm, setShowAddForm] = useState(false);
+
 
     const handleLogoutClick = async () => {
         if (uid && db) {
@@ -712,19 +517,6 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
         if (!newTask.title.trim()) return;
         setTasks(prev => [{ ...newTask, id: Date.now(), completed: false, source: 'custom', completedAt: null }, ...prev]);
         setNewTask({ ...newTask, title: '', deadline: formatDate(today) });
-        setShowAddForm(false);
-    };
-
-    const [newRoadmapTask, setNewRoadmapTask] = useState('');
-
-    const addRoadmapTask = e => {
-        e.preventDefault();
-        if (!newRoadmapTask.trim()) return;
-        setTasks(prev => [{
-            id: Date.now(), title: newRoadmapTask, category: 'Roadmap', priority: 'High',
-            completed: false, deadline: formatDate(today), source: 'roadmap', completedAt: null, timeSpent: 0
-        }, ...prev]);
-        setNewRoadmapTask('');
     };
 
     // ── Computed ─────────────────────────────────────────────────────────────
@@ -744,20 +536,6 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
         tasks.forEach(t => { const w = t.priority === 'High' ? 3 : t.priority === 'Medium' ? 2 : 1; total += w; if (t.completed) done += w; });
         return Math.min(100, Math.round((done / total) * 100) + (dailyChallenge.completed ? 5 : 0));
     }, [tasks, dailyChallenge.completed]);
-
-    const radarData = useMemo(() => {
-        return Object.keys(allCategories).map(cat => {
-            const sub = tasks.filter(t => t.category === cat);
-            const done = sub.filter(t => t.completed).length;
-            return { category: cat.split(' /')[0], score: sub.length ? Math.round((done / sub.length) * 100) : 0 };
-        });
-    }, [tasks, allCategories]);
-
-    const pieData = useMemo(() =>
-        Object.entries(allCategories).map(([cat, cfg]) => ({
-            name: cat.split(' /')[0], value: tasks.filter(t => t.category === cat && !t.completed).length, color: cfg.color
-        })).filter(d => d.value > 0)
-        , [tasks, allCategories]);
 
     const subjectLag = useMemo(() => fallbackSubs.map(sub => {
         const s = tasks.filter(t => t.subject === sub);
@@ -856,6 +634,8 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                     </div>
                     {[
                         { id: 'tasks', icon: <Cpu size={15} />, label: 'Dashboard' },
+                        { id: 'stats', icon: <BarChart2 size={15} />, label: 'Stats' },
+                        { id: 'fitness', icon: <Dumbbell size={15} />, label: 'Fitness' },
                         { id: 'roadmap', icon: <Map size={15} />, label: 'Roadmap' },
                         { id: 'history', icon: <History size={15} />, label: 'History' },
                         { id: 'custom', icon: <Sliders size={15} />, label: 'Customize' },
@@ -1078,13 +858,7 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                             </div>
                         </div>
 
-                        {/* ═══════ ANALYTICS SECTION ═══════ */}
-                        <AnalyticsPanel
-                            tasks={tasks}
-                            allCategories={allCategories}
-                            radarData={radarData}
-                            pieData={pieData}
-                        />
+                        {/* ═══════ STATS & FITNESS SECTIONS MIGRATED ═══════ */}
                     </div>
 
                     {/* Right sidebar */}
@@ -1155,85 +929,24 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                 </div>
             </>)}
 
+            {/* ═══════ VIEW: STATS ═══════ */}
+            {view === 'stats' && (
+                <div className="animate-fade-in" style={{ marginTop: '1.5rem' }}>
+                    <StatsPanel tasks={tasks} history={history} allCategories={allCategories} />
+                </div>
+            )}
+
+            {/* ═══════ VIEW: FITNESS ═══════ */}
+            {view === 'fitness' && (
+                <div className="animate-fade-in" style={{ marginTop: '1.5rem' }}>
+                    <FitnessPanel tasks={tasks} setTasks={setTasks} />
+                </div>
+            )}
+
             {/* ═══════ VIEW: ROADMAP ═══════ */}
             {view === 'roadmap' && (
-                <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                    <div className="glass-panel animate-fade-in" style={{ borderTop: '4px solid #f472b6' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', marginBottom: '1.5rem' }}>
-                            <div style={{ padding: '0.8rem', background: 'rgba(244,114,182,0.1)', borderRadius: '14px', color: '#f472b6' }}>
-                                <Map size={32} />
-                            </div>
-                            <div>
-                                <h2 style={{ fontSize: '1.4rem', color: '#fff', marginBottom: '0.2rem' }}>Your Ultimate Roadmap</h2>
-                                <p style={{ color: '#f472b6', fontSize: '1rem', fontWeight: 'bold', letterSpacing: '0.03em' }}>{userProfile?.roadmap}</p>
-                            </div>
-                        </div>
-
-                        <p style={{ color: 'rgba(255,255,255,0.6)', lineHeight: '1.6', fontSize: '0.9rem', marginBottom: '2rem' }}>
-                            This is your independent space dedicated to your long-term roadmap. Add projects, skills to learn, interview prep, and milestones that directly contribute to becoming a master in <b>{userProfile?.roadmap}</b>.
-                        </p>
-
-                        <form onSubmit={addRoadmapTask} style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem' }}>
-                            <input type="text" value={newRoadmapTask} onChange={e => setNewRoadmapTask(e.target.value)}
-                                placeholder="Add a new milestone or project for your roadmap..."
-                                className="input-field" style={{ flex: 1, padding: '0.8rem 1rem', fontSize: '0.95rem' }} required />
-                            <button type="submit" className="btn btn-primary" style={{ background: '#f472b6', color: '#000', fontWeight: 'bold', padding: '0 1.5rem' }}>
-                                Add Milestone
-                            </button>
-                        </form>
-
-                        <div className="tasks-container">
-                            <h3 style={{ fontSize: '1.05rem', marginBottom: '1rem', color: 'rgba(255,255,255,0.8)' }}>
-                                🛣️ Milestones & Tasks ({tasks.filter(t => t.category === 'Roadmap').length})
-                            </h3>
-                            {tasks.filter(t => t.category === 'Roadmap').length === 0 && (
-                                <div style={{ textAlign: 'center', padding: '3rem', background: 'rgba(255,255,255,0.02)', borderRadius: '12px' }}>
-                                    <Map size={40} color="rgba(255,255,255,0.1)" style={{ margin: '0 auto 1rem' }} />
-                                    <p style={{ color: 'rgba(255,255,255,0.4)' }}>Your roadmap is currently empty. Start defining your path above!</p>
-                                </div>
-                            )}
-                            {tasks.filter(t => t.category === 'Roadmap').map(task => {
-                                const dl = getDeadlineStatus(task.deadline, task.completed);
-                                return (
-                                    <div key={task.id} className={`task-item ${task.completed ? 'task-completed' : ''}`}
-                                        style={{ borderLeft: `3px solid #f472b6`, background: 'rgba(244,114,182,0.03)' }}>
-                                        <div className="task-info">
-                                            <div>
-                                                <div className="task-title" style={{ textDecoration: task.completed ? 'line-through' : 'none', fontSize: '1rem' }}>{task.title}</div>
-                                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.3rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                                                    {dl && <span style={{ fontSize: '0.75rem', color: dl.color, fontWeight: '700' }}><CalendarDays size={12} /> {dl.text}</span>}
-                                                    {task.timeSpent > 0 && (
-                                                        <span style={{ fontSize: '0.75rem', color: '#f472b6', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                                            <Clock size={12} /> {formatTime(task.timeSpent)}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="task-actions">
-                                            <span className={`priority-badge ${PRIORITIES[task.priority]}`}>{task.priority}</span>
-                                            {!task.completed && (
-                                                <button onClick={() => toggleTimer(task.id)} className="task-check-btn" title={activeTimer === task.id ? "Stop Timer" : "Start Timer"}>
-                                                    {activeTimer === task.id ? <Square size={18} color="var(--accent-red)" /> : <Play size={18} color="var(--accent-green)" />}
-                                                </button>
-                                            )}
-                                            {!task.completed && (
-                                                <button onClick={() => setEditingTask({ ...task })} className="task-check-btn" title="Edit task">
-                                                    <Edit2 size={18} color="rgba(255,255,255,0.7)" />
-                                                </button>
-                                            )}
-                                            <button onClick={() => deleteTask(task.id)} className="task-check-btn">
-                                                <Trash2 size={18} color="rgba(255,123,114,0.7)" />
-                                            </button>
-                                            <button onClick={() => toggleTask(task.id)} className="task-check-btn">
-                                                {task.completed ? <CheckCircle2 size={28} color="var(--accent-green)" /> : <Circle size={28} color="rgba(255,255,255,0.2)" />}
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
+                <div style={{ marginTop: '1.5rem' }}>
+                    <RoadmapPanel userProfile={userProfile} tasks={tasks} setTasks={setTasks} />
                 </div>
             )}
 
