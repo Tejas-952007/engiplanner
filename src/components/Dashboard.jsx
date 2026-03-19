@@ -7,10 +7,12 @@ import {
     Bell, BellOff, Edit2, Play, Square, Clock, Save, User, Sliders, Mail,
     Send, Share2, UserPlus, Copy, Check, BarChart2
 } from 'lucide-react';
-import { db, doc, setDoc, onSnapshot, auth } from '../firebase';
+import { db, doc, setDoc, getDoc, onSnapshot, auth } from '../firebase';
 import StatsPanel from './StatsPanel';
 import FitnessPanel from './FitnessPanel';
 import RoadmapPanel from './RoadmapPanel';
+import NotificationManager from './NotificationManager';
+
 
 const CATEGORIES = {
     'Academics': { icon: BookOpen, color: '#60a5fa', hex: '#60a5fa', glow: 'rgba(96,165,250,0.35)' },
@@ -633,6 +635,7 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                         <Terminal size={14} /> <strong style={{ color: '#fff' }}>{productivityScore} XP</strong>
                     </div>
                     {[
+
                         { id: 'tasks', icon: <Cpu size={15} />, label: 'Dashboard' },
                         { id: 'stats', icon: <BarChart2 size={15} />, label: 'Stats' },
                         { id: 'fitness', icon: <Dumbbell size={15} />, label: 'Fitness' },
@@ -648,7 +651,10 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                             <span className="nav-label">{btn.label}</span>
                         </button>
                     ))}
+                    {/* Premium Notification Center */}
+                    <NotificationManager uid={uid} userProfile={userProfile} />
                 </div>
+
             </div>
 
             {/* ══ TOAST STACK — fixed overlay, top-right ══ */}
@@ -1381,9 +1387,41 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                             </div>
                             <div style={{ display: 'flex', gap: '0.5rem' }}>
                                 {remindersEnabled && (
-                                    <button onClick={sendTestNotification} className="btn btn-outline" style={{ fontSize: '0.78rem', gap: '0.4rem' }}>
-                                        <Bell size={13} /> Test
-                                    </button>
+                                    <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                        <button onClick={sendTestNotification} className="btn btn-outline" title="Send local test toast" style={{ fontSize: '0.78rem', gap: '0.4rem' }}>
+                                            <Bell size={13} /> Test
+                                        </button>
+                                        <button 
+                                            onClick={async () => {
+                                                const id = Date.now();
+                                                const next = { 
+                                                    id, 
+                                                    title: '🍔 Order Preparing', 
+                                                    body: 'Your "DSA Problem Set" is being prepared. Estimated time: 20 mins! 🚀', 
+                                                    type: 'success', 
+                                                    read: false, 
+                                                    date: new Date().toISOString() 
+                                                };
+                                                // Fetch current notifications to avoid overwriting
+                                                const userRef = doc(db, 'users', uid);
+                                                const snap = await getDoc(userRef);
+                                                const currentNotifs = snap.exists() ? (snap.data().notifications || []) : [];
+                                                const updatedNotifs = [next, ...currentNotifs].slice(0, 50);
+                                                
+                                                if (uid && db) {
+                                                    await setDoc(userRef, { notifications: updatedNotifs }, { merge: true });
+                                                    showToast('Swiggy Alert Simulated!', 'Check the bell icon for the rich notification!', 'success', 4000);
+                                                } else {
+                                                    showToast('Simulated!', 'Notifications work best when logged in.', 'info', 3000);
+                                                }
+                                            }} 
+                                            className="btn btn-outline" 
+                                            title="Simulate Swiggy rich alert"
+                                            style={{ fontSize: '0.78rem', gap: '0.4rem', borderColor: 'var(--accent-green)', color: 'var(--accent-green)' }}
+                                        >
+                                            <Play size={12} /> Swiggy Style Alert
+                                        </button>
+                                    </div>
                                 )}
                                 <button onClick={toggleReminders}
                                     className={`btn ${remindersEnabled ? 'btn-outline' : 'btn-primary'}`}

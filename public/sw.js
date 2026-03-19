@@ -58,3 +58,57 @@ self.addEventListener('fetch', (event) => {
             })
     );
 });
+// ── Push: handle browser push notifications ──────────────────────────────────
+self.addEventListener('push', (event) => {
+    let data = { title: 'EngiPlanner', body: 'New notification from your workspace!', icon: '/icon-192.png' };
+    try {
+        if (event.data) {
+            const pushData = event.data.json();
+            data = { ...data, ...pushData };
+        }
+    } catch (e) {
+        data.body = event.data.text() || data.body;
+    }
+
+    const options = {
+        body: data.body,
+        icon: data.icon || '/icon-192.png',
+        badge: '/icon-192.png',
+        vibrate: [100, 50, 100],
+        data: {
+            url: data.url || self.location.origin,
+            timestamp: Date.now()
+        },
+        actions: [
+            { action: 'open', title: 'View Now' },
+            { action: 'close', title: 'Later' }
+        ]
+    };
+
+    event.waitUntil(
+        self.registration.showNotification(data.title, options)
+    );
+});
+
+// ── Notification Click: handle user interaction ────────────────────────────────
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+
+    if (event.action === 'close') return;
+
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+            if (clientList.length > 0) {
+                let client = clientList[0];
+                for (let i = 0; i < clientList.length; i++) {
+                    if (clientList[i].focused) {
+                        client = clientList[i];
+                        break;
+                    }
+                }
+                return client.focus();
+            }
+            return clients.openWindow(event.notification.data.url || '/');
+        })
+    );
+});
