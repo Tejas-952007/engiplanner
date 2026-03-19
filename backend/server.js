@@ -3,8 +3,6 @@ const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
 const admin = require('firebase-admin');
-const nodemailer = require('nodemailer');
-
 // ─── Firebase Admin Init ──────────────────────────────────────────────────
 admin.initializeApp({
   credential: admin.credential.cert({
@@ -17,36 +15,30 @@ admin.initializeApp({
 
 const db = admin.firestore();
 
-// ─── Nodemailer Setup ─────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: (process.env.EMAIL_PASS || '').replace(/\s+/g, ''),
-  },
-});
-
-transporter.verify((error, success) => {
-  if (error) console.error('❌ Nodemailer sync error:', error.message);
-  else console.log('✅ Nodemailer Ready: Using', process.env.EMAIL_USER);
-});
-
+// ─── Resend REST API ──────────────────────────────────────────────────────
+// Uses HTTPS (port 443) — works perfectly on Render & all free-tier hosts.
+// Gmail SMTP (port 465/587) is BLOCKED by Render's free tier, so we use Resend.
 async function sendEmail(to, subject, html) {
-  const mailOptions = {
-    from: `"EngiPlanner" <${process.env.EMAIL_USER}>`,
-    to,
-    subject,
-    html,
-  };
-
-  try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✉️ Email Sent: ${info.messageId}`);
-    return info;
-  } catch (err) {
-    console.error(`❌ Mailer Error:`, err.message);
-    throw err;
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: `EngiPlanner <onboarding@resend.dev>`,
+      to: [to],
+      subject,
+      html,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    console.error('❌ Resend error:', JSON.stringify(data));
+    throw new Error(data?.message || JSON.stringify(data));
   }
+  console.log(`✉️ Email sent via Resend → id: ${data.id}`);
+  return data;
 }
 
 // ─── Logging System ────────────────────────────────────────────────────────
@@ -399,16 +391,36 @@ app.post('/send-my-reminder', async (req, res) => {
   const { idToken } = req.body;
   if (!idToken) return res.status(400).json({ error: 'idToken required' });
 
+  let uid;
   try {
     const decoded = await admin.auth().verifyIdToken(idToken);
-    const userDoc = await db.collection('users').doc(decoded.uid).get();
-    if (!userDoc.exists) return res.status(404).json({ error: 'User not found' });
+    uid = decoded.uid;
+  } catch (e) {
+    console.error('Token verification failed:', e.message);
+    return res.status(401).json({ error: 'Invalid or expired token. Please refresh and try again.' });
+  }
+
+  try {
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (!userDoc.exists) return res.status(404).json({ error: 'User not found in database.' });
 
     const data = userDoc.data();
-    await sendMorningBriefingEmail(data.profile.email, data.profile.name || 'Student', data.tasks || []);
-    res.json({ message: 'Email sent successfully!' });
+    const profile = data?.profile || {};
+    const tasks = data?.tasks || [];
+
+    if (!profile.email) return res.status(400).json({ error: 'No email address found on your profile.' });
+
+    console.log(`📧 Self-triggered reminder for ${profile.email}...`);
+    await sendMorningBriefingEmail(profile.email, profile.name || 'Student', tasks);
+    res.json({ message: `Email sent to ${profile.email}! Check your inbox.` });
   } catch (e) {
-    res.status(401).json({ error: 'Invalid token or send failed' });
+    console.error(`❌ /send-my-reminder failed:`, e.message);
+    // Surface the actual error to the frontend so user knows what went wrong
+    res.status(500).json({ 
+      error: e.message.includes('restricted') 
+        ? 'Resend is in test mode — emails can only be sent to the verified address. Go to resend.com to verify your domain or email.'
+        : `Send failed: ${e.message}` 
+    });
   }
 });
 
