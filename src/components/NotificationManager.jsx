@@ -1,20 +1,50 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Bell, BellOff, CheckCircle2, AlertCircle, X, ExternalLink, MessageSquare } from 'lucide-react';
-import { db, doc, setDoc, onSnapshot } from '../firebase';
+import { db, doc, setDoc, onSnapshot, messaging, getToken } from '../firebase';
 
 /**
  * Premium Notification Hub for EngiPlanner
  * Handles:
- * 1. Browser Notification API (OS Tray)
+ * 1. Firebase Cloud Messaging (FCM) — REAL BACKGROUND NOTIFICATIONS
  * 2. In-app Rich Toast Feed
- * 3. Persistence via Firestore
  */
 export default function NotificationManager({ uid, userProfile }) {
     const [permissionStatus, setPermissionStatus] = useState(Notification.permission);
     const [notifications, setNotifications] = useState([]);
+    const [fcmToken, setFcmToken] = useState(null);
     const [unreadCount, setUnreadCount] = useState(0);
     const [isOpen, setIsOpen] = useState(false);
     const [showHub, setShowHub] = useState(false);
+
+    // ── Setup FCM Token for Background Messaging ─────────────────────────
+    const requestToken = useCallback(async () => {
+        if (!messaging || !uid) return;
+        
+        try {
+            // VAPID_KEY is required for web push (get it from Firebase Console Messaging settings)
+            const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || ''; 
+            const currentToken = await getToken(messaging, { vapidKey });
+            if (currentToken) {
+                setFcmToken(currentToken);
+                // Save token to Firestore so your backend can push to this device
+                await setDoc(doc(db, 'users', uid), { 
+                    fcmTokens: { [currentToken]: true } 
+                }, { merge: true });
+                console.log('FCM Token generated and saved 🚀');
+            } else {
+                console.warn('No registration token available. Request permission to generate one.');
+            }
+        } catch (err) {
+            console.error('An error occurred while retrieving token:', err);
+        }
+    }, [uid]);
+
+    // Request token automatically if permission is already granted
+    useEffect(() => {
+        if (permissionStatus === 'granted') {
+            requestToken();
+        }
+    }, [permissionStatus, requestToken]);
 
     // ── Sync Notifications from Firestore ──────────────────────────────────
     useEffect(() => {

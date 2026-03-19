@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
+import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
 const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "",
@@ -15,6 +16,7 @@ let app = null;
 let auth = null;
 let db = null;
 let provider = null;
+let messaging = null;
 
 try {
     if (firebaseConfig.apiKey) {
@@ -22,9 +24,18 @@ try {
         auth = getAuth(app);
         db = getFirestore(app);
         provider = new GoogleAuthProvider();
+        
+        // Messaging is only supported in browser environments with HTTPS/localhost
+        if (typeof window !== "undefined") {
+            messaging = getMessaging(app);
+        }
     }
 } catch (error) {
     console.error("Firebase init failed:", error);
 }
 
-export { auth, db, provider, signInWithPopup, signOut, doc, setDoc, getDoc, onSnapshot, firebaseConfig };
+export { 
+    auth, db, provider, messaging, 
+    signInWithPopup, signOut, doc, setDoc, getDoc, onSnapshot, 
+    getToken, onMessage, firebaseConfig 
+};

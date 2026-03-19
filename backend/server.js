@@ -229,6 +229,28 @@ async function sendMorningBriefingEmail(email, userName, allTasks) {
   await sendEmail(email, `☀️ ${dueToday.length} due today · ${completedCount}/${total} done — ${process.env.APP_NAME}`, html);
 }
 
+async function sendPushNotification(uid, title, body) {
+  try {
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (!userDoc.exists) return;
+    const tokensMap = userDoc.data()?.fcmTokens || {};
+    const tokens = Object.keys(tokensMap);
+    if (tokens.length === 0) return;
+    const message = { notification: { title, body }, tokens };
+    const response = await admin.messaging().sendMulticast(message);
+    console.log(`🚀 ${response.successCount} push notifications sent for UID: ${uid}`);
+    if (response.failureCount > 0) {
+      const tokensToRemove = [];
+      response.responses.forEach((resp, idx) => { if (!resp.success) tokensToRemove.push(tokens[idx]); });
+      if (tokensToRemove.length > 0) {
+        const removeUpdate = {};
+        tokensToRemove.forEach(t => { removeUpdate[`fcmTokens.${t}`] = admin.firestore.FieldValue.delete(); });
+        await db.collection('users').doc(uid).update(removeUpdate);
+      }
+    }
+  } catch (err) { console.error('❌ FCM Error:', err.message); }
+}
+
 async function sendWelcomeEmail(email, userName) {
   const html = `
   <!DOCTYPE html>
@@ -242,7 +264,6 @@ async function sendWelcomeEmail(email, userName) {
     </div>
   </body>
   </html>`;
-
   await sendEmail(email, `🚀 Welcome to ${process.env.APP_NAME}, ${userName}!`, html);
 }
 
