@@ -1281,24 +1281,36 @@ export default function Dashboard({ userProfile, uid, onLogout, onUpdateProfile 
                                     </div>
 
                                     {emailEnabled && (
-                                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.8rem', display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                                            <label style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                                                <Clock size={14} /> Send my daily briefing at:
-                                            </label>
-                                            <select
-                                                value={reminderHour}
-                                                onChange={(e) => updateReminderHour(e.target.value)}
-                                                className="input-field"
-                                                style={{ width: 'auto', minWidth: '100px', height: '32px', fontSize: '0.8rem', padding: '0 0.5rem' }}
-                                            >
-                                                {Array.from({ length: 24 }).map((_, i) => {
-                                                    const h = i.toString().padStart(2, '0');
-                                                    return <option key={h} value={h}>{h}:00 IST</option>;
-                                                })}
-                                            </select>
+                                        <div style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+                                                <label style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.5)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                                    <Clock size={14} /> Send my daily briefing at:
+                                                </label>
+                                                <select
+                                                    value={reminderHour}
+                                                    onChange={(e) => updateReminderHour(e.target.value)}
+                                                    className="input-field"
+                                                    style={{ width: 'auto', minWidth: '100px', height: '32px', fontSize: '0.8rem', padding: '0 0.5rem' }}
+                                                >
+                                                    {Array.from({ length: 24 }).map((_, i) => {
+                                                        const h = i.toString().padStart(2, '0');
+                                                        return <option key={h} value={h}>{h}:00 IST</option>;
+                                                    })}
+                                                </select>
+                                            </div>
+                                            {userProfile?.systemControls?.lastBriefingDate && (
+                                                <div style={{ 
+                                                    fontSize: '0.72rem', color: '#34d399', 
+                                                    background: 'rgba(52,211,153,0.05)', padding: '0.4rem 0.8rem', 
+                                                    borderRadius: '8px', border: '1px solid rgba(52,211,153,0.1)' 
+                                                }}>
+                                                    ✅ Last Briefing successfully dispatched on <b>{userProfile.systemControls.lastBriefingDate}</b>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
+
                             );
                         })()}
 
