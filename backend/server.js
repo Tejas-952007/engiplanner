@@ -260,8 +260,9 @@ async function runMorningBriefings(isAuto = false) {
   const istOffset = 5.5 * 60 * 60 * 1000;
   const istTime = new Date(now.getTime() + istOffset);
   const currentIstHour = istTime.getUTCHours().toString().padStart(2, '0');
+  const currentIstMinute = istTime.getUTCMinutes().toString().padStart(2, '0');
 
-  console.log(`\n[${new Date().toISOString()}] ☀️ ${isAuto ? 'Auto' : 'Manual'} briefing check for IST Hour: ${currentIstHour}:00...`);
+  console.log(`\n[${new Date().toISOString()}] ☀️ ${isAuto ? 'Auto' : 'Manual'} briefing check for IST Time: ${currentIstHour}:${currentIstMinute}...`);
 
   try {
     const snapshot = await db.collection('users').get();
@@ -274,8 +275,11 @@ async function runMorningBriefings(isAuto = false) {
 
       if (!profile?.emailReminders || !profile?.email) { skipped++; continue; }
 
-      const userPrefHour = profile.reminderHour || '08';
-      if (isAuto && userPrefHour !== currentIstHour) {
+      // Support HH:MM exact match — user sets hour + minute in their profile
+      const userPrefHour = (profile.reminderHour || '08').toString().padStart(2, '0');
+      const userPrefMinute = (profile.reminderMinute || '00').toString().padStart(2, '0');
+
+      if (isAuto && (userPrefHour !== currentIstHour || userPrefMinute !== currentIstMinute)) {
         continue;
       }
 
@@ -298,7 +302,7 @@ async function runMorningBriefings(isAuto = false) {
       }
     }
 
-    const logMsg = `Briefings: Sent ${sent}, Skipped ${skipped} (IST Hour ${currentIstHour})`;
+    const logMsg = `Briefings: Sent ${sent}, Skipped ${skipped} (IST ${currentIstHour}:${currentIstMinute})`;
     console.log(`✅ ${logMsg}`);
     if (sent > 0 || !isAuto) logCronActivity('Briefing', logMsg, 'success');
   } catch (err) {
@@ -307,35 +311,60 @@ async function runMorningBriefings(isAuto = false) {
   }
 }
 
-async function runDailyReminders() {
-  console.log(`\n[${new Date().toISOString()}] 🚀 Running daily deadline reminders...`);
+async function runDailyReminders(isAuto = false) {
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istTime = new Date(now.getTime() + istOffset);
+  const currentIstHour = istTime.getUTCHours().toString().padStart(2, '0');
+  const currentIstMinute = istTime.getUTCMinutes().toString().padStart(2, '0');
+
+  console.log(`\n[${new Date().toISOString()}] 🚀 ${isAuto ? 'Auto' : 'Manual'} deadline reminder check — IST ${currentIstHour}:${currentIstMinute}...`);
+
   try {
     const snapshot = await db.collection('users').get();
-    let sent = 0;
+    let sent = 0, skipped = 0;
 
     for (const userDoc of snapshot.docs) {
       const data = userDoc.data();
       const profile = data?.profile;
       const tasks = data?.tasks || [];
 
-      if (!profile?.emailReminders || !profile?.email) continue;
+      if (!profile?.emailReminders || !profile?.email) { skipped++; continue; }
+
+      // Per-user deadline reminder time — defaults to 07:30 IST
+      const userDeadlineHour = (profile.deadlineReminderHour || '07').toString().padStart(2, '0');
+      const userDeadlineMinute = (profile.deadlineReminderMinute || '30').toString().padStart(2, '0');
+
+      if (isAuto && (userDeadlineHour !== currentIstHour || userDeadlineMinute !== currentIstMinute)) {
+        continue;
+      }
+
+      // Duplicate guard — don't send twice in one day
+      const lastSentDate = data.systemControls?.lastDeadlineReminderDate;
+      const today = todayStr();
+      if (isAuto && lastSentDate === today) { skipped++; continue; }
 
       const pendingWithDeadline = tasks.filter(
         t => !t.completed && t.deadline && getDeadlineStatus(t.deadline) !== null
       );
 
-      if (pendingWithDeadline.length === 0) continue;
+      if (pendingWithDeadline.length === 0) { skipped++; continue; }
 
       try {
         await sendDeadlineEmail(profile.email, profile.name || 'Student', pendingWithDeadline);
+        await userDoc.ref.set({ systemControls: { lastDeadlineReminderDate: today } }, { merge: true });
         sent++;
       } catch (err) {
         console.error(`❌ Deadline Email Error (${profile.email}):`, err.message);
       }
     }
-    logCronActivity('Reminder', `Sent ${sent} deadline reminders`, 'success');
+
+    const logMsg = `Deadline Reminders: Sent ${sent}, Skipped ${skipped} (IST ${currentIstHour}:${currentIstMinute})`;
+    console.log(`✅ ${logMsg}`);
+    if (sent > 0 || !isAuto) logCronActivity('Reminder', logMsg, 'success');
   } catch (err) {
     console.error('❌ Firestore Error:', err.message);
+    logCronActivity('Error', err.message, 'error');
   }
 }
 
@@ -400,12 +429,13 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`\n🌐 EngiPlanner Backend running on port ${PORT}`);
 
-  cron.schedule('0 * * * *', () => {
+  // Run every minute so we can match exact HH:MM user preference
+  cron.schedule('* * * * *', () => {
     runMorningBriefings(true);
   }, { timezone: 'UTC' });
 
-  const deadlineSched = process.env.CRON_SCHEDULE || '30 1 * * *';
-  cron.schedule(deadlineSched, () => {
-    runDailyReminders();
+  // Deadline reminder — runs every minute, matches per-user deadlineReminderHour:Minute
+  cron.schedule('* * * * *', () => {
+    runDailyReminders(true);
   }, { timezone: 'UTC' });
 });
