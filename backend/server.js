@@ -18,16 +18,14 @@ admin.initializeApp({
 const db = admin.firestore();
 
 // ─── Nodemailer Setup ─────────────────────────────────────────────────────
-// Using Gmail SMTP (reliable for personal dev / no domain verification needed)
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
-    pass: (process.env.EMAIL_PASS || '').replace(/\s+/g, ''), // Strip spaces from app password
+    pass: (process.env.EMAIL_PASS || '').replace(/\s+/g, ''),
   },
 });
 
-// Verify connection on boot
 transporter.verify((error, success) => {
   if (error) console.error('❌ Nodemailer sync error:', error.message);
   else console.log('✅ Nodemailer Ready: Using', process.env.EMAIL_USER);
@@ -51,7 +49,7 @@ async function sendEmail(to, subject, html) {
   }
 }
 
-// ─── Logging System (Persist cron status to Firestore) ────────────────────
+// ─── Logging System ────────────────────────────────────────────────────────
 async function logCronActivity(type, message, status = 'info') {
   try {
     await db.collection('system_logs').add({
@@ -68,10 +66,9 @@ async function logCronActivity(type, message, status = 'info') {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 const todayStr = () => {
-    const d = new Date();
-    // Use IST for string comparison to ensure consistency with frontend
-    const ist = new Date(d.getTime() + (5.5 * 60 * 60 * 1000));
-    return ist.toISOString().split('T')[0];
+  const d = new Date();
+  const ist = new Date(d.getTime() + (5.5 * 60 * 60 * 1000));
+  return ist.toISOString().split('T')[0];
 };
 
 function getDeadlineStatus(deadline) {
@@ -147,37 +144,97 @@ async function sendDeadlineEmail(email, userName, tasks) {
   await sendEmail(email, `⚡ ACTION REQUIRED: ${dueToday.length + overdue.length} Tasks — ${process.env.APP_NAME}`, html);
 }
 
+// ─── UPDATED: Morning Briefing with Remaining vs Completed Stats ───────────
 async function sendMorningBriefingEmail(email, userName, allTasks) {
+  const total = allTasks.length;
+  const completed = allTasks.filter(t => t.completed);
   const pending = allTasks.filter(t => !t.completed);
+  const completedCount = completed.length;
+  const pendingCount = pending.length;
+  const completionPct = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+
   const overdue = pending.filter(t => t.deadline && daysUntil(t.deadline) < 0);
   const dueToday = pending.filter(t => t.deadline && daysUntil(t.deadline) === 0);
   const upcoming = pending.filter(t => t.deadline && daysUntil(t.deadline) > 0 && daysUntil(t.deadline) <= 3);
-  const noDeadline = pending.filter(t => !t.deadline).slice(0, 5);
+
+  // Build upcoming rows (max 5)
+  const buildUpcomingRows = (arr) =>
+    arr.slice(0, 5).map(t => `
+      <tr>
+        <td style="padding:9px 14px; border-bottom:1px solid #1a1a2e; font-size:13px; color:#e6e6ef;">${t.title}</td>
+        <td style="padding:9px 14px; border-bottom:1px solid #1a1a2e; font-size:12px; color:#666; white-space:nowrap;">${t.category || '—'}</td>
+        <td style="padding:9px 14px; border-bottom:1px solid #1a1a2e; font-size:12px; color:#79c0ff; white-space:nowrap;">+${daysUntil(t.deadline)}d</td>
+      </tr>`).join('');
+
+  const upcomingSection = upcoming.length > 0 ? `
+    <h3 style="color:#79c0ff; margin:24px 0 8px; font-size:14px;">📌 Upcoming in 3 Days (${upcoming.length})</h3>
+    <table width="100%" style="border-collapse:collapse; background:#0d0d1c; border-radius:10px; overflow:hidden;">
+      <thead><tr style="background:#0a0a16;">
+        <th style="padding:9px 14px; font-size:10px; color:#444; text-align:left; text-transform:uppercase;">Task</th>
+        <th style="padding:9px 14px; font-size:10px; color:#444; text-align:left; text-transform:uppercase;">Category</th>
+        <th style="padding:9px 14px; font-size:10px; color:#444; text-align:left; text-transform:uppercase;">Due In</th>
+      </tr></thead>
+      <tbody>${buildUpcomingRows(upcoming)}</tbody>
+    </table>` : '';
 
   const html = `
   <!DOCTYPE html>
   <html>
-  <body style="margin:0; padding:40px; background:#070710; font-family:sans-serif; color:#e6e6ef;">
-    <div style="max-width:600px; margin:0 auto; background:#0d0d1a; border-radius:24px; padding:40px; border:1px solid rgba(255,255,255,0.1);">
-      <h1 style="color:#fff; margin:0;">☀️ Morning Intelligence</h1>
-      <p style="color:#58a6ff; font-weight:700; text-transform:uppercase; font-size:12px; margin-top:5px;">Mission Report for ${userName}</p>
+  <body style="margin:0; padding:40px 20px; background:#070710; font-family:sans-serif; color:#e6e6ef;">
+    <div style="max-width:600px; margin:0 auto; background:#0d0d1a; border-radius:24px; padding:40px; border:1px solid rgba(255,255,255,0.08);">
       
-      <div style="margin:30px 0; background:rgba(255,255,255,0.03); padding:20px; border-radius:15px;">
-        <span style="color:#ff7b72;">${overdue.length} Overdue</span> • 
-        <span style="color:#ffa657;">${dueToday.length} Due Today</span> • 
-        <span style="color:#58a6ff;">${pending.length} Total Pipeline</span>
+      <!-- Header -->
+      <h1 style="color:#fff; margin:0; font-size:26px;">☀️ Morning Briefing</h1>
+      <p style="color:#58a6ff; font-weight:700; text-transform:uppercase; font-size:11px; margin:6px 0 28px; letter-spacing:1px;">Daily Mission Report · ${userName}</p>
+
+      <!-- Task Stats: 3 cards -->
+      <div style="display:flex; gap:12px; margin-bottom:24px;">
+        <div style="flex:1; background:#12121f; border-radius:14px; padding:18px 14px; text-align:center; border:1px solid rgba(255,255,255,0.06);">
+          <div style="font-size:30px; font-weight:800; color:#fff;">${pendingCount}</div>
+          <div style="font-size:11px; color:#666; margin-top:4px; text-transform:uppercase; letter-spacing:0.5px;">Remaining</div>
+        </div>
+        <div style="flex:1; background:#12121f; border-radius:14px; padding:18px 14px; text-align:center; border:1px solid rgba(255,255,255,0.06);">
+          <div style="font-size:30px; font-weight:800; color:#3fb950;">${completedCount}</div>
+          <div style="font-size:11px; color:#666; margin-top:4px; text-transform:uppercase; letter-spacing:0.5px;">Completed</div>
+        </div>
+        <div style="flex:1; background:#12121f; border-radius:14px; padding:18px 14px; text-align:center; border:1px solid rgba(255,255,255,0.06);">
+          <div style="font-size:30px; font-weight:800; color:#e3b341;">${total}</div>
+          <div style="font-size:11px; color:#666; margin-top:4px; text-transform:uppercase; letter-spacing:0.5px;">Total Tasks</div>
+        </div>
       </div>
 
-      <p style="color:#8b949e; line-height:1.7;">"Execution is independent of inspiration." Let's get to work.</p>
-      
-      <div style="margin-top:40px; text-align:center;">
-        <a href="https://engiplanner.vercel.app" style="background:#fff; color:#0d0d1a; padding:15px 40px; border-radius:12px; text-decoration:none; font-weight:800;">OPEN COMMAND CENTER</a>
+      <!-- Progress Bar -->
+      <div style="margin-bottom:28px;">
+        <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+          <span style="font-size:12px; color:#8b949e;">Overall Progress</span>
+          <span style="font-size:12px; font-weight:700; color:#3fb950;">${completionPct}% Done</span>
+        </div>
+        <div style="background:#1a1a2e; border-radius:999px; height:8px; overflow:hidden;">
+          <div style="width:${completionPct}%; background:linear-gradient(90deg, #3fb950, #58a6ff); height:100%; border-radius:999px;"></div>
+        </div>
+      </div>
+
+      <!-- Status Pills -->
+      <div style="background:rgba(255,255,255,0.03); border-radius:14px; padding:16px 20px; margin-bottom:24px;">
+        <span style="font-size:13px; margin-right:16px;">🔴 <strong style="color:#ff7b72;">${overdue.length}</strong> <span style="color:#666;">Overdue</span></span>
+        <span style="font-size:13px; margin-right:16px;">🟠 <strong style="color:#ffa657;">${dueToday.length}</strong> <span style="color:#666;">Due Today</span></span>
+        <span style="font-size:13px;">🔵 <strong style="color:#79c0ff;">${upcoming.length}</strong> <span style="color:#666;">Due in 3 Days</span></span>
+      </div>
+
+      ${upcomingSection}
+
+      <p style="color:#555; font-size:13px; line-height:1.7; margin-top:24px; font-style:italic;">"Execution is independent of inspiration." Let's get to work.</p>
+
+      <!-- CTA -->
+      <div style="margin-top:32px; text-align:center;">
+        <a href="https://engiplanner.vercel.app" style="background:#fff; color:#0d0d1a; padding:15px 40px; border-radius:12px; text-decoration:none; font-weight:800; font-size:14px; letter-spacing:0.5px;">OPEN COMMAND CENTER →</a>
       </div>
     </div>
   </body>
   </html>`;
 
-  await sendEmail(email, `☀️ Morning Briefing: ${dueToday.length} due today — ${process.env.APP_NAME}`, html);
+  // Updated subject line: shows remaining + completion ratio
+  await sendEmail(email, `☀️ ${dueToday.length} due today · ${completedCount}/${total} done — ${process.env.APP_NAME}`, html);
 }
 
 async function sendWelcomeEmail(email, userName) {
@@ -217,13 +274,11 @@ async function runMorningBriefings(isAuto = false) {
 
       if (!profile?.emailReminders || !profile?.email) { skipped++; continue; }
 
-      // Personalized timing check:
       const userPrefHour = profile.reminderHour || '08';
       if (isAuto && userPrefHour !== currentIstHour) {
         continue;
       }
 
-      // Check for duplicates (don't send twice in one day)
       const lastSentDate = data.systemControls?.lastBriefingDate;
       const today = todayStr();
       if (isAuto && lastSentDate === today) {
@@ -232,7 +287,6 @@ async function runMorningBriefings(isAuto = false) {
       }
 
       const pending = tasks.filter(t => !t.completed);
-      // Small logic change: Send message even if no tasks ARE DUE today, but there ARE pending tasks
       if (pending.length === 0) { skipped++; continue; }
 
       try {
@@ -298,20 +352,18 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', uptime: process.uptime() });
 });
 
-// GET trigger for easy cron integration (e.g. cron-job.org)
 app.get('/trigger-briefing', async (req, res) => {
   const { secret } = req.query;
   if (secret !== process.env.TRIGGER_SECRET) return res.status(401).send('Unauthorized');
-  
   res.send('Manual morning briefing check initialized.');
-  runMorningBriefings(true); 
+  runMorningBriefings(true);
 });
 
 app.post('/trigger-briefing', async (req, res) => {
   const { secret } = req.body;
   if (secret !== process.env.TRIGGER_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   res.json({ message: 'Forced briefing job started' });
-  runMorningBriefings(false); // Force send manual
+  runMorningBriefings(false);
 });
 
 app.post('/send-my-reminder', async (req, res) => {
@@ -348,12 +400,10 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`\n🌐 EngiPlanner Backend running on port ${PORT}`);
 
-  // Internal Cron: Every hour check
   cron.schedule('0 * * * *', () => {
     runMorningBriefings(true);
   }, { timezone: 'UTC' });
 
-  // Global deadline reminder (defaults to 7 AM IST)
   const deadlineSched = process.env.CRON_SCHEDULE || '30 1 * * *';
   cron.schedule(deadlineSched, () => {
     runDailyReminders();
