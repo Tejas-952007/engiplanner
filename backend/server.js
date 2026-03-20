@@ -445,6 +445,24 @@ app.post('/send-my-reminder', async (req, res) => {
   }
 });
 
+app.post('/test-push', async (req, res) => {
+  const { idToken } = req.body;
+  if (!idToken) return res.status(400).json({ error: 'idToken required' });
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    const userDoc = await db.collection('users').doc(decoded.uid).get();
+    const data = userDoc.data();
+    const name = data?.profile?.name || 'User';
+    
+    // Trigger real background push!
+    await sendPushNotification(decoded.uid, "🚀 Test Background Push", `Hey ${name}! This is exactly how Swiggy & WhatsApp notifications look. It works! 🍔🔥`);
+    
+    res.json({ success: true, message: 'Push sent to your device(s)!' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/send-welcome', async (req, res) => {
   const { idToken } = req.body;
   try {
